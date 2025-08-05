@@ -1,5 +1,6 @@
 import threading
 import queue
+import time
 import numpy as np
 import traceback
 from tqdm import tqdm
@@ -71,7 +72,7 @@ class StreamSDK:
                 ctrl_info[i] = item
         self.ctrl_info = ctrl_info
 
-    def setup(self, source_path, output_path, **kwargs):
+    def setup(self, source_path, output_path, writer_cls=VideoWriterByImageIO, **kwargs):
 
         # ======== Prepare Options ========
         kwargs = self._merge_kwargs(self.default_kwargs, kwargs)
@@ -196,8 +197,14 @@ class StreamSDK:
 
         # ======== Video Writer ========
         self.output_path = output_path
-        self.tmp_output_path = output_path + ".tmp.mp4"
-        self.writer = VideoWriterByImageIO(self.tmp_output_path)
+        if writer_cls is VideoWriterByImageIO:
+            self.tmp_output_path = output_path + ".tmp.mp4"
+            writer_path = self.tmp_output_path
+        else:
+            self.tmp_output_path = None
+            writer_path = output_path
+        self.writer = writer_cls(writer_path)
+        self.writer.start_segment()
         self.writer_pbar = tqdm(desc="writer")
 
         # ======== Audio Feat Buffer ========
@@ -264,7 +271,7 @@ class StreamSDK:
             if item is None:
                 break
             res_frame_rgb = item
-            self.writer(res_frame_rgb, fmt="rgb")
+            self.writer.write_frame(res_frame_rgb, fmt="rgb")
             self.writer_pbar.update()
 
     def putback_worker(self):
@@ -520,7 +527,7 @@ class StreamSDK:
             thread.join()
 
         try:
-            self.writer.close()
+            self.writer.close_segment()
             self.writer_pbar.close()
         except:
             traceback.print_exc()
@@ -538,6 +545,19 @@ class StreamSDK:
                 break
             except queue.Full:
                 continue
+
+    def flush(self):
+        """Block until all internal queues are empty."""
+        queues = [
+            self.audio2motion_queue,
+            self.motion_stitch_queue,
+            self.warp_f3d_queue,
+            self.decode_f3d_queue,
+            self.putback_queue,
+            self.writer_queue,
+        ]
+        while any(not q.empty() for q in queues):
+            time.sleep(0.1)
 
     
 

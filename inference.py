@@ -7,6 +7,7 @@ import torch
 import pickle
 
 from stream_pipeline_offline import StreamSDK
+from core.atomic_components.writer import SegmentedVideoWriter
 
 
 def seed_everything(seed):
@@ -61,6 +62,52 @@ def run(SDK: StreamSDK, audio_path: str, source_path: str, output_path: str, mor
     os.system(cmd)
 
     print(output_path)
+
+
+def stream_run(
+    SDK: StreamSDK,
+    audio_path: str,
+    source_path: str,
+    output_dir: str,
+    more_kwargs: str | dict = {},
+):
+    """Stream audio and yield individual MP4 segments.
+
+    Parameters are similar to :func:`run` but ``output_dir`` points to a
+    directory where ``segment_XXXXX.mp4`` files will be written.
+    """
+
+    if isinstance(more_kwargs, str):
+        more_kwargs = load_pkl(more_kwargs)
+    setup_kwargs = more_kwargs.get("setup_kwargs", {})
+    run_kwargs = more_kwargs.get("run_kwargs", {})
+    setup_kwargs["online_mode"] = True
+
+    SDK.setup(source_path, output_dir, writer_cls=SegmentedVideoWriter, **setup_kwargs)
+
+    chunksize = run_kwargs.get("chunksize", (3, 5, 2))
+
+    audio, sr = librosa.core.load(audio_path, sr=16000)
+    audio = np.concatenate([np.zeros((chunksize[0] * 640,), dtype=np.float32), audio], 0)
+    split_len = int(sum(chunksize) * 0.04 * 16000) + 80
+
+    first = True
+    for i in range(0, len(audio), chunksize[1] * 640):
+        audio_chunk = audio[i:i + split_len]
+        if len(audio_chunk) < split_len:
+            audio_chunk = np.pad(audio_chunk, (0, split_len - len(audio_chunk)), mode="constant")
+
+        if not first:
+            SDK.writer.start_segment()
+        first = False
+
+        SDK.run_chunk(audio_chunk, chunksize)
+        SDK.flush()
+        seg = SDK.writer.close_segment()
+        if seg is not None:
+            yield seg
+
+    SDK.close()
 
 
 if __name__ == "__main__":

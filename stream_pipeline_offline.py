@@ -72,7 +72,16 @@ class StreamSDK:
                 ctrl_info[i] = item
         self.ctrl_info = ctrl_info
 
-    def setup(self, source_path, output_path, writer_cls=VideoWriterByImageIO, **kwargs):
+    def setup(
+        self,
+        source_path,
+        output_path,
+        writer_cls=VideoWriterByImageIO,
+        writer_kwargs=None,
+        **kwargs,
+    ):
+
+        writer_kwargs = writer_kwargs or {}
 
         # ======== Prepare Options ========
         kwargs = self._merge_kwargs(self.default_kwargs, kwargs)
@@ -203,7 +212,7 @@ class StreamSDK:
         else:
             self.tmp_output_path = None
             writer_path = output_path
-        self.writer = writer_cls(writer_path)
+        self.writer = writer_cls(writer_path, **writer_kwargs)
         self.writer.start_segment()
         self.writer_pbar = tqdm(desc="writer")
 

@@ -5,6 +5,7 @@ import numpy as np
 import random
 import torch
 import pickle
+from typing import Generator
 
 from stream_pipeline_offline import StreamSDK
 from core.atomic_components.writer import SegmentedVideoWriter
@@ -70,11 +71,15 @@ def stream_run(
     source_path: str,
     output_dir: str,
     more_kwargs: str | dict = {},
-):
-    """Stream audio and yield individual MP4 segments.
+) -> Generator[bytes, None, None]:
+    """Stream audio and yield individual MP4 segments as bytes.
 
-    Parameters are similar to :func:`run` but ``output_dir`` points to a
-    directory where ``segment_XXXXX.mp4`` files will be written.
+    Parameters are similar to :func:`run` but ``output_dir`` is kept for
+    API compatibility. Each yielded value contains the encoded MP4 data
+    for a segment.
+
+    Yields:
+        bytes: Encoded MP4 data for each segment.
     """
 
     if isinstance(more_kwargs, str):
@@ -83,7 +88,13 @@ def stream_run(
     run_kwargs = more_kwargs.get("run_kwargs", {})
     setup_kwargs["online_mode"] = True
 
-    SDK.setup(source_path, output_dir, writer_cls=SegmentedVideoWriter, **setup_kwargs)
+    SDK.setup(
+        source_path,
+        output_dir,
+        writer_cls=SegmentedVideoWriter,
+        writer_kwargs={"in_memory": True},
+        **setup_kwargs,
+    )
 
     chunksize = run_kwargs.get("chunksize", (3, 5, 2))
 
